@@ -10,12 +10,14 @@ IMAGE_DIR = "motor_images"
 if not os.path.exists(IMAGE_DIR):
     os.makedirs(IMAGE_DIR)
 
+# 初始化模拟数据库
 if 'db' not in st.session_state:
     st.session_state.db = pd.DataFrame([
         {"Plate": "WQQ1234", "State": "WPKL", "Model": "Yamaha Y15ZR", "Engine": "E34567E", "Image": ""},
         {"Plate": "JSS8888", "State": "Johor", "Model": "Honda RSX", "Engine": "E98765H", "Image": ""}
     ])
 
+# --- 侧边栏：录入新数据 ---
 st.sidebar.header("➕ 录入新摩托车")
 new_plate = st.sidebar.text_input("车牌号码 (Plate)").upper().strip()
 new_state = st.sidebar.selectbox("所属州属 (State)", ["WPKL", "Johor", "Penang", "Selangor", "Perak"])
@@ -25,17 +27,23 @@ new_img = st.sidebar.file_uploader("上传摩托照片", type=["jpg", "png", "jp
 
 if st.sidebar.button("保存数据"):
     if new_plate and new_model and new_engine:
-        img_path = ""
-        if new_img:
-            img_path = os.path.join(IMAGE_DIR, f"{new_plate}.jpg")
-            with open(img_path, "wb") as f:
-                f.write(new_img.getbuffer())
-        new_data = {"Plate": new_plate, "State": new_state, "Model": new_model, "Engine": new_engine, "Image": img_path}
-        st.session_state.db = pd.concat([st.session_state.db, pd.DataFrame([new_data])], ignore_index=True)
-        st.sidebar.success(f"成功录入车牌: {new_plate}")
+        # 检查车牌是否已存在
+        if new_plate in st.session_state.db['Plate'].values:
+            st.sidebar.error(f"车牌 {new_plate} 已存在，请勿重复录入！")
+        else:
+            img_path = ""
+            if new_img:
+                img_path = os.path.join(IMAGE_DIR, f"{new_plate}.jpg")
+                with open(img_path, "wb") as f:
+                    f.write(new_img.getbuffer())
+            new_data = {"Plate": new_plate, "State": new_state, "Model": new_model, "Engine": new_engine, "Image": img_path}
+            st.session_state.db = pd.concat([st.session_state.db, pd.DataFrame([new_data])], ignore_index=True)
+            st.sidebar.success(f"成功录入车牌: {new_plate}")
+            st.rerun()  # 刷新页面看到新数据
     else:
         st.sidebar.error("请填写所有必填项！")
 
+# --- 主界面：查询与搜索 ---
 st.header("🔍 车辆与车牌检索")
 search_query = st.text_input("输入车牌、型号、Engine号或州属进行搜索:").strip()
 
@@ -50,12 +58,13 @@ if search_query:
 else:
     filtered_df = df
 
+# --- 显示结果 ---
 if filtered_df.empty:
     st.warning("没有找到匹配的摩托车记录。")
 else:
     for index, row in filtered_df.iterrows():
         with st.container():
-            col1, col2 = st.columns([1, 2])
+            col1, col2, col3 = st.columns([1.5, 2, 1])  # 增加第三列用来放删除按钮
             with col1:
                 if row['Image'] and os.path.exists(row['Image']):
                     st.image(Image.open(row['Image']), use_container_width=True)
@@ -65,4 +74,11 @@ else:
                 st.subheader(f"车牌: {row['Plate']} ({row['State']})")
                 st.text(f"🏍️ 摩托型号: {row['Model']}")
                 st.text(f"⚙️ 引擎号码: {row['Engine']}")
+            with col3:
+                # 每一个车牌绑定一个专用的删除按钮，使用车牌号作为唯一标识
+                if st.button(f"❌ 删除记录", key=f"del_{row['Plate']}"):
+                    # 从数据集中剔除这行数据
+                    st.session_state.db = st.session_state.db[st.session_state.db['Plate'] != row['Plate']]
+                    st.success(f"车牌 {row['Plate']} 已成功删除！")
+                    st.rerun()  # 重新刷新网页列表
             st.markdown("---")
