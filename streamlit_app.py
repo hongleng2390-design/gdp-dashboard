@@ -10,12 +10,9 @@ IMAGE_DIR = "motor_images"
 if not os.path.exists(IMAGE_DIR):
     os.makedirs(IMAGE_DIR)
 
-# 初始化模拟数据库
+# 初始化完全干净的、没有初始车牌的空白表格
 if 'db' not in st.session_state:
-    st.session_state.db = pd.DataFrame([
-        {"Plate": "WQQ1234", "State": "WPKL", "Model": "Yamaha Y15ZR", "Engine": "E34567E", "Image": ""},
-        {"Plate": "JSS8888", "State": "Johor", "Model": "Honda RSX", "Engine": "E98765H", "Image": ""}
-    ])
+    st.session_state.db = pd.DataFrame(columns=["Plate", "State", "Model", "Engine", "Image"])
 
 # --- 侧边栏：录入新数据 ---
 st.sidebar.header("➕ 录入新摩托车")
@@ -39,7 +36,7 @@ if st.sidebar.button("保存数据"):
             new_data = {"Plate": new_plate, "State": new_state, "Model": new_model, "Engine": new_engine, "Image": img_path}
             st.session_state.db = pd.concat([st.session_state.db, pd.DataFrame([new_data])], ignore_index=True)
             st.sidebar.success(f"成功录入车牌: {new_plate}")
-            st.rerun()  # 刷新页面看到新数据
+            st.rerun()
     else:
         st.sidebar.error("请填写所有必填项！")
 
@@ -64,7 +61,7 @@ if filtered_df.empty:
 else:
     for index, row in filtered_df.iterrows():
         with st.container():
-            col1, col2, col3 = st.columns([1.5, 2, 1])  # 增加第三列用来放删除按钮
+            col1, col2, col3 = st.columns([1.5, 2, 1])
             with col1:
                 if row['Image'] and os.path.exists(row['Image']):
                     st.image(Image.open(row['Image']), use_container_width=True)
@@ -75,10 +72,8 @@ else:
                 st.text(f"🏍️ 摩托型号: {row['Model']}")
                 st.text(f"⚙️ 引擎号码: {row['Engine']}")
             with col3:
-                # 每一个车牌绑定一个专用的删除按钮，使用车牌号作为唯一标识
                 if st.button(f"❌ 删除记录", key=f"del_{row['Plate']}"):
-                    # 从数据集中剔除这行数据
                     st.session_state.db = st.session_state.db[st.session_state.db['Plate'] != row['Plate']]
                     st.success(f"车牌 {row['Plate']} 已成功删除！")
-                    st.rerun()  # 重新刷新网页列表
+                    st.rerun()
             st.markdown("---")
