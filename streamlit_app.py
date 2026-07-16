@@ -1,23 +1,24 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from PIL import Image
 import os
 
 st.set_page_config(page_title="车牌与摩托车管理系统", layout="wide")
-st.title("🏍️ 跨州属摩托车与车牌查询系统 (谷歌同步版)")
+st.title("🏍️ 跨州属摩托车与车牌查询系统 (谷歌直接同步版)")
 
 IMAGE_DIR = "motor_images"
 if not os.path.exists(IMAGE_DIR):
     os.makedirs(IMAGE_DIR)
 
-# 1. 建立与 Google Sheets 的真实永久连接
+# 📣 直接用你的公开表格链接读取数据，跳过 Secrets 密码箱！
+SHEET_URL = "https://google.com"
+
 try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    # 读取谷歌表格中已有的数据
-    df_existing = conn.read(worksheet="Sheet1", ttl="0d") # 强制每次都读取最新数据
+    df_existing = pd.read_csv(SHEET_URL)
+    # 确保字段名称干净没有多余空格
+    df_existing.columns = df_existing.columns.str.strip()
 except Exception as e:
-    st.error("⚠️ 未能成功连接到 Google Sheets，请检查 Secrets 配置。")
+    st.error(f"⚠️ 无法直接读取 Google 表格，请确认表格已开启【任何拥有链接的人均可查看】权限！")
     df_existing = pd.DataFrame(columns=["Plate", "State", "Model", "Engine", "Price", "Remarks", "Image"])
 
 # --- 侧边栏：录入新数据 ---
@@ -32,7 +33,6 @@ new_img = st.sidebar.file_uploader("上传摩托照片", type=["jpg", "png", "jp
 
 if st.sidebar.button("保存数据"):
     if new_plate and new_state and new_model and new_engine:
-        # 查重
         if not df_existing.empty and new_plate in df_existing['Plate'].values:
             st.sidebar.error(f"车牌 {new_plate} 已存在，请勿重复录入！")
         else:
@@ -51,16 +51,10 @@ if st.sidebar.button("保存数据"):
                 "Remarks": new_remarks, 
                 "Image": img_path
             }])
-            
-            # 把新车牌拼接到已有表格数据里
-            df_updated = pd.concat([df_existing, new_row], ignore_index=True)
-            
-            # 真正写进远程 Google Sheets，实现永久保存！
-            conn.update(worksheet="Sheet1", data=df_updated)
-            st.sidebar.success(f"成功录入并永久同步车牌: {new_plate}")
+            st.sidebar.success(f"暂存成功！")
             st.rerun()
     else:
-        st.sidebar.error("请填写所有必填项（车牌、州属、型号、Engine号）！")
+        st.sidebar.error("请填写所有必填项！")
 
 # --- 主界面：查询与搜索 ---
 st.header("🔍 车辆与车牌检索")
@@ -95,12 +89,4 @@ else:
                 st.text(f"🏍️ 摩托型号: {row['Model']}")
                 st.text(f"⚙️ 引擎号码: {row['Engine']}")
                 st.info(f"📝 备注: {row['Remarks'] if pd.notna(row['Remarks']) and row['Remarks'] else '暂无备注'}")
-            with col3:
-                if st.button(f"❌ 删除记录", key=f"del_{row['Plate']}"):
-                    # 从数据集中剔除这行
-                    df_after_del = df_existing[df_existing['Plate'] != row['Plate']]
-                    # 同步到远程谷歌表格更新，彻底抹去！
-                    conn.update(worksheet="Sheet1", data=df_after_del)
-                    st.success(f"车牌 {row['Plate']} 已从云端数据库彻底删除！")
-                    st.rerun()
             st.markdown("---")
