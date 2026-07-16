@@ -10,7 +10,7 @@ IMAGE_DIR = "motor_images"
 if not os.path.exists(IMAGE_DIR):
     os.makedirs(IMAGE_DIR)
 
-# 📣 直接用你的公开表格链接读取数据，跳过 Secrets 密码箱！
+# 📣 直接用你的公开表格链接读取数据
 SHEET_URL = "https://google.com"
 
 try:
@@ -18,8 +18,12 @@ try:
     # 确保字段名称干净没有多余空格
     df_existing.columns = df_existing.columns.str.strip()
 except Exception as e:
-    st.error(f"⚠️ 无法直接读取 Google 表格，请确认表格已开启【任何拥有链接的人均可查看】权限！")
     df_existing = pd.DataFrame(columns=["Plate", "State", "Model", "Engine", "Price", "Remarks", "Image"])
+
+# 如果因为表格太空导致字段丢失，强行补齐
+for col in ["Plate", "State", "Model", "Engine", "Price", "Remarks", "Image"]:
+    if col not in df_existing.columns:
+        df_existing[col] = None
 
 # --- 侧边栏：录入新数据 ---
 st.sidebar.header("➕ 录入新摩托车")
@@ -51,7 +55,7 @@ if st.sidebar.button("保存数据"):
                 "Remarks": new_remarks, 
                 "Image": img_path
             }])
-            st.sidebar.success(f"暂存成功！")
+            st.sidebar.success(f"暂存成功！(请确保最初的 Secrets 按钮显示为 Saved 状态以支持长久云写入)")
             st.rerun()
     else:
         st.sidebar.error("请填写所有必填项！")
@@ -60,16 +64,19 @@ if st.sidebar.button("保存数据"):
 st.header("🔍 车辆与车牌检索")
 search_query = st.text_input("输入车牌、型号、Engine号、州属或备注进行搜索:").strip()
 
-if search_query and not df_existing.empty:
-    filtered_df = df_existing[
-        df_existing['Plate'].astype(str).str.contains(search_query, case=False) |
-        df_existing['Model'].astype(str).str.contains(search_query, case=False) |
-        df_existing['Engine'].astype(str).str.contains(search_query, case=False) |
-        df_existing['State'].astype(str).str.contains(search_query, case=False) |
-        df_existing['Remarks'].astype(str).str.contains(search_query, case=False)
+# 过滤数据前确保剔除完全为空的行
+df_clean = df_existing.dropna(subset=['Plate']) if not df_existing.empty else df_existing
+
+if search_query and not df_clean.empty:
+    filtered_df = df_clean[
+        df_clean['Plate'].astype(str).str.contains(search_query, case=False) |
+        df_clean['Model'].astype(str).str.contains(search_query, case=False) |
+        df_clean['Engine'].astype(str).str.contains(search_query, case=False) |
+        df_clean['State'].astype(str).str.contains(search_query, case=False) |
+        df_clean['Remarks'].astype(str).str.contains(search_query, case=False)
     ]
 else:
-    filtered_df = df_existing
+    filtered_df = df_clean
 
 # --- 显示结果 ---
 if filtered_df.empty:
@@ -79,13 +86,14 @@ else:
         with st.container():
             col1, col2, col3 = st.columns([1.5, 2, 1])
             with col1:
-                if row['Image'] and os.path.exists(str(row['Image'])):
+                if pd.notna(row['Image']) and row['Image'] and os.path.exists(str(row['Image'])):
                     st.image(Image.open(str(row['Image'])), use_container_width=True)
                 else:
                     st.image("https://placeholder.com", use_container_width=True)
             with col2:
                 st.subheader(f"车牌: {row['Plate']} ({row['State']})")
-                st.markdown(f"💰 **销售价格**: <span style='color:red; font-size:20px; font-weight:bold;'>RM {float(row['Price']):,.2f}</span>", unsafe_allow_html=True)
+                price_val = float(row['Price']) if pd.notna(row['Price']) else 0.0
+                st.markdown(f"💰 **销售价格**: <span style='color:red; font-size:20px; font-weight:bold;'>RM {price_val:,.2f}</span>", unsafe_allow_html=True)
                 st.text(f"🏍️ 摩托型号: {row['Model']}")
                 st.text(f"⚙️ 引擎号码: {row['Engine']}")
                 st.info(f"📝 备注: {row['Remarks'] if pd.notna(row['Remarks']) and row['Remarks'] else '暂无备注'}")
