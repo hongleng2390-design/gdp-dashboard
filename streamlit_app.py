@@ -1,151 +1,68 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+from PIL import Image
+import os
 
-# Set the title and favicon that appear in the Browser's tab bar.
-st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
-)
+st.set_page_config(page_title="车牌与摩托车管理系统", layout="wide")
+st.title("🏍️ 跨州属摩托车与车牌查询系统")
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+IMAGE_DIR = "motor_images"
+if not os.path.exists(IMAGE_DIR):
+    os.makedirs(IMAGE_DIR)
 
-@st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+if 'db' not in st.session_state:
+    st.session_state.db = pd.DataFrame([
+        {"Plate": "WQQ1234", "State": "WPKL", "Model": "Yamaha Y15ZR", "Engine": "E34567E", "Image": ""},
+        {"Plate": "JSS8888", "State": "Johor", "Model": "Honda RSX", "Engine": "E98765H", "Image": ""}
+    ])
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
+st.sidebar.header("➕ 录入新摩托车")
+new_plate = st.sidebar.text_input("车牌号码 (Plate)").upper().strip()
+new_state = st.sidebar.selectbox("所属州属 (State)", ["WPKL", "Johor", "Penang", "Selangor", "Perak"])
+new_model = st.sidebar.text_input("摩托型号 (Model)")
+new_engine = st.sidebar.text_input("Engine 号码")
+new_img = st.sidebar.file_uploader("上传摩托照片", type=["jpg", "png", "jpeg"])
 
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
+if st.sidebar.button("保存数据"):
+    if new_plate and new_model and new_engine:
+        img_path = ""
+        if new_img:
+            img_path = os.path.join(IMAGE_DIR, f"{new_plate}.jpg")
+            with open(img_path, "wb") as f:
+                f.write(new_img.getbuffer())
+        new_data = {"Plate": new_plate, "State": new_state, "Model": new_model, "Engine": new_engine, "Image": img_path}
+        st.session_state.db = pd.concat([st.session_state.db, pd.DataFrame([new_data])], ignore_index=True)
+        st.sidebar.success(f"成功录入车牌: {new_plate}")
+    else:
+        st.sidebar.error("请填写所有必填项！")
 
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
+st.header("🔍 车辆与车牌检索")
+search_query = st.text_input("输入车牌、型号、Engine号或州属进行搜索:").strip()
 
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
+df = st.session_state.db
+if search_query:
+    filtered_df = df[
+        df['Plate'].str.contains(search_query, case=False) |
+        df['Model'].str.contains(search_query, case=False) |
+        df['Engine'].str.contains(search_query, case=False) |
+        df['State'].str.contains(search_query, case=False)
+    ]
+else:
+    filtered_df = df
 
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
-
-
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
-
-st.header(f'GDP in {to_year}', divider='gray')
-
-''
-
-cols = st.columns(4)
-
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
-
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
-
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+if filtered_df.empty:
+    st.warning("没有找到匹配的摩托车记录。")
+else:
+    for index, row in filtered_df.iterrows():
+        with st.container():
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                if row['Image'] and os.path.exists(row['Image']):
+                    st.image(Image.open(row['Image']), use_container_width=True)
+                else:
+                    st.image("https://placeholder.com", use_container_width=True)
+            with col2:
+                st.subheader(f"车牌: {row['Plate']} ({row['State']})")
+                st.text(f"🏍️ 摩托型号: {row['Model']}")
+                st.text(f"⚙️ 引擎号码: {row['Engine']}")
+            st.markdown("---")
